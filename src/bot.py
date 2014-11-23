@@ -11,9 +11,11 @@ import lib.functions_commands as commands
 class Roboraj:
 
 	def __init__(self, config):
-		self.config = config
-		self.irc = irc_.irc(config)
-		self.socket = self.irc.get_irc_socket_object()
+            self.config = config
+            self.irc = irc_.irc(config)
+            self.socket = self.irc.get_irc_socket_object()
+            self.user_list = set()
+            self.saved_data = ""
 
 
 	def run(self):
@@ -21,8 +23,13 @@ class Roboraj:
 		sock = self.socket
 		config = self.config
 
+                state = 1 # Get initial data
 		while True:
+                        print "############################################# NEW PACKET ###################################################"
 			data = sock.recv(config['socket_buffer_size']).rstrip()
+
+                        data = "".join((self.saved_data, data))
+                        self.saved_data = ""
 
 			if len(data) == 0:
 				pp('Connection was lost, reconnecting.')
@@ -32,7 +39,41 @@ class Roboraj:
 				print data
 
 			# check for ping, reply with pong
-			irc.check_for_ping(data)
+                        irc.check_for_ping(data)
+                        
+                        if state == 2:
+                            new_data = data.split('\n')
+                            for line in new_data[0:-1]:
+                                if "End of /NAMES list" in line:
+                                    state = 3
+                                    print len(self.user_list), "users online"
+                                    break
+                                header, sep, names = line.partition(" :")
+                                self.user_list = self.user_list.union(set(names.split()))
+
+                            if state != 3 and not "End of /NAMES list" in new_data[-1]:
+                                self.saved_data = new_data[-1]
+                            continue
+                        
+                        user_list_updated = irc.check_for_user_list_update(data)
+                        if user_list_updated:
+                            new_data = data.split('\n')
+                            for line in new_data:
+                                if line:
+                                    info = line.split()
+                                    if len(info) >= 3:
+                                        info[0] = info[0].partition(':')[-1].rpartition('!')[0] 
+                                        if info[1] == "JOIN":
+                                            self.user_list.add(info[0]) 
+                                        if info[1] == "PART":
+                                            self.user_list.discard(info[0])
+                                    else:
+                                        self.saved_data = line
+                            if not self.saved_data:
+                                if state == 1:
+                                    state = 2 #Get current userlist
+                                print len(self.user_list), "users online"
+                            continue
 
 			if irc.check_for_message(data):
 				message_dict = irc.get_message(data)
@@ -40,6 +81,8 @@ class Roboraj:
 				channel = message_dict['channel']
 				message = message_dict['message']
 				username = message_dict['username']
+
+                                print username in self.user_list
 
 				ppi(channel, message, username)
 
@@ -60,7 +103,7 @@ class Roboraj:
 									channel
 								)
 							else:
-								pbot('Command is valid an not on cooldown. (%s) (%s)' % (
+								pbot('Command is valid and not on cooldown. (%s) (%s)' % (
 									command, username), 
 									channel
 								)
@@ -69,7 +112,7 @@ class Roboraj:
 								commands.update_last_used(command, channel)
 
 								if result:
-									resp = '(%s) > %s' % (username, result)
+									resp = result
 									pbot(resp, channel)
 									irc.send_message(channel, resp)
 

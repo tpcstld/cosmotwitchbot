@@ -8,6 +8,9 @@ class irc:
 	def __init__(self, config):
 		self.config = config
 
+        def get_user_list(self):
+            self.sock.send('NAMES') 
+
 	def check_for_message(self, data):
 		if re.match(r'^:[a-zA-Z0-9_]+\![a-zA-Z0-9_]+@[a-zA-Z0-9_]+(\.tmi\.twitch\.tv|\.testserver\.local) PRIVMSG #[a-zA-Z0-9_]+ :.+$', data):
 			return True
@@ -22,8 +25,12 @@ class irc:
 			return True
 
 	def check_for_ping(self, data):
-		if data[:4] == "PING": 
-			self.sock.send('PONG')
+            if data[:4] == "PING": 
+                self.sock.send('PONG')
+
+        def check_for_user_list_update(self, data):
+            new_data = data.split(None, 2)
+            return new_data[1] == "JOIN" or new_data[1] == "PART"
 
 	def get_message(self, data):
 		return {
